@@ -2,7 +2,7 @@
 
 A lightweight cross-platform encryption tool.  
 
-----------
+---
 
 ## English
 
@@ -56,7 +56,7 @@ TasKin
 Github: TasKin-tk  
 Email: tnailkogns@hotmail.com  
 
-----------
+---
 
 ## 中文
 
