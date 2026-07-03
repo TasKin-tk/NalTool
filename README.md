@@ -57,7 +57,7 @@ MIT License
 ### Author
 
 TasKin  
-Github: TasKin-tk  
+Github: https://github.com/TasKin-tk  
 Email: tnailkogns@hotmail.com  
 
 ---
@@ -98,7 +98,7 @@ NalFile 是 NalTool 生成的加密文件格式，兼容于多平台。
 
 ### 下载 NalTool
 
-从 [Releases](https://github.com/TasKin-tk/NalTool/releases) 下载最新版本。  
+请到 [Releases](https://github.com/TasKin-tk/NalTool/releases) 页面下载最新版本。  
 
 ### 快速开始
 
@@ -115,5 +115,5 @@ MIT 协议
 ### 作者
 
 TasKin  
-Github：TasKin-tk  
+Github：https://github.com/TasKin-tk  
 邮箱：tnailkogns@hotmail.com  
