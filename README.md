@@ -24,7 +24,8 @@ Pure Python implementation. Requires Python 3.6 or higher. No external dependenc
 
 This repository contains two versions of NalTool:  
 - NalTool-version-English.py      - English version  
-- NalTool-version-Chinese.py      - Chinese version  
+- NalTool-version-Chinese.py      - Chinese version
+
 Both versions are identical in functionality, only the interface language differs.  
 
 ### NalKey
@@ -77,7 +78,8 @@ NalTool 基于命令行交互界面，具有友好的使用体验。
 
 本仓库包含两个版本的 NalTool：  
 - NalTool-version-English.py      - 英文版  
-- NalTool-version-Chinese.py      - 中文版  
+- NalTool-version-Chinese.py      - 中文版
+
 两个版本功能完全相同，仅界面语言不同。  
 
 ### NalKey 说明
