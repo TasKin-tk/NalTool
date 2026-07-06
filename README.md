@@ -44,9 +44,11 @@ Download the latest version from [Releases](https://github.com/TasKin-tk/NalTool
 
 ### Quick Start
 
-git clone https://github.com/TasKin-tk/NalTool.git  
-cd NalTool  
-python NalTool-version-language.py  
+```
+git clone https://github.com/TasKin-tk/NalTool.git
+cd NalTool
+python NalTool-version-language.py
+```
 
 Replace version and language with the actual version number and language.  
 
@@ -103,9 +105,11 @@ NalFile 是 NalTool 生成的加密文件格式，兼容于多平台。
 
 ### 快速开始
 
-git clone https://github.com/TasKin-tk/NalTool.git  
-cd NalTool  
-python NalTool-version-language.py  
+```
+git clone https://github.com/TasKin-tk/NalTool.git
+cd NalTool
+python NalTool-version-language.py
+```
 
 将 version 和 language 替换为实际版本号和语言。  
 
