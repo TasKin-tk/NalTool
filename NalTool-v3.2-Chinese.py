@@ -1,4 +1,4 @@
-#NalTool - TasKin Made - 3.2
+# NalTool - TasKin Made - 3.3
 
 import os
 import sys
@@ -11,18 +11,108 @@ import struct
 from pathlib import Path
 from datetime import datetime
 
-# ==================== 版本信息 ====================
-VERSION = "3.2"
+# 版本信息
+VERSION = "3.3"
 AUTHOR = "TasKin"
 EMAIL = "tnailkogns@hotmail.com"
 MAGIC_HEADER = b'NALT'  # 文件头魔数，用于识别
 HEADER_VERSION = 1      # 文件格式版本
 
-# ==================== 平台检测 ====================
+# 平台检测
 IS_WINDOWS = sys.platform == 'win32'
 IS_UNIX = sys.platform in ('linux', 'darwin', 'cygwin', 'freebsd')
 
-# ==================== 跨平台密码输入 ====================
+# 进度条模块
+class ProgressBar:
+    """终端进度条，支持自定义宽度和样式"""
+    
+    def __init__(self, total, desc='进度', width=40):
+        self.total = total
+        self.desc = desc
+        self.width = width
+        self.current = 0
+        self.start_time = time.time()
+        self.last_update = 0
+        self.min_update_interval = 0.1
+        self.finished = False
+        
+    def update(self, n=1):
+        if self.finished:
+            return
+        self.current = min(self.current + n, self.total)
+        self._render()
+        
+    def set_progress(self, value):
+        if self.finished:
+            return
+        self.current = min(value, self.total)
+        self._render()
+        
+    def finish(self):
+        self.finished = True
+        self.current = self.total
+        self._render()
+        
+    def _render(self):
+        now = time.time()
+        if now - self.last_update < self.min_update_interval and self.current < self.total:
+            return
+        self.last_update = now
+        
+        percent = self.current / self.total if self.total > 0 else 0
+        filled_len = int(self.width * percent)
+        bar = '█' * filled_len + '░' * (self.width - filled_len)
+        
+        elapsed = now - self.start_time
+        if self.current > 0 and self.current < self.total:
+            speed = self.current / elapsed if elapsed > 0 else 0
+            eta = (self.total - self.current) / speed if speed > 0 else 0
+        else:
+            speed = 0
+            eta = 0
+        
+        percent_str = f'{percent*100:>6.1f}%'
+        time_str = f'[{self._format_time(elapsed)}<{self._format_time(eta)}]' if self.current < self.total else f'[{self._format_time(elapsed)}]'
+        speed_str = f' {self._format_size(speed)}/s' if speed > 0 else ''
+        
+        line = f'\r{self.desc}: {bar} {percent_str} {time_str}{speed_str}'
+        
+        if self.current >= self.total:
+            self.finished = True
+            # 不自动添加换行，由调用者控制
+        
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        
+    def _format_time(self, seconds):
+        if seconds < 0 or not self._isfinite(seconds):
+            return '--:--'
+        if seconds < 60:
+            return f'{int(seconds):02d}s'
+        elif seconds < 3600:
+            return f'{int(seconds//60):02d}m{int(seconds%60):02d}s'
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f'{hours:02d}h{minutes:02d}m'
+            
+    def _format_size(self, size):
+        if size < 1024:
+            return f'{size:.1f}B'
+        elif size < 1024 * 1024:
+            return f'{size/1024:.1f}KB'
+        elif size < 1024 * 1024 * 1024:
+            return f'{size/(1024*1024):.1f}MB'
+        else:
+            return f'{size/(1024*1024*1024):.1f}GB'
+            
+    def _isfinite(self, x):
+        try:
+            return x == x and x != float('inf') and x != float('-inf')
+        except:
+            return False
+
+# 跨平台密码输入
 def get_password_with_asterisk(prompt='请输入密钥: '):
     """密码输入时显示 * 号，跨平台支持"""
     if IS_WINDOWS:
@@ -88,12 +178,12 @@ def get_password_with_asterisk(prompt='请输入密钥: '):
         except Exception:
             return getpass.getpass(prompt)
 
-# ==================== 获取脚本所在目录 ====================
+# 获取脚本所在目录
 def get_script_directory():
     """获取NalTool脚本所在的目录"""
     return os.path.dirname(os.path.abspath(__file__))
 
-# ==================== Base91 编解码 ====================
+# Base91 编解码
 B91_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"'
 
 def b91encode(data):
@@ -148,7 +238,7 @@ def b91decode(s):
         out.append(b & 255)
     return bytes(out)
 
-# ==================== 加密核心 ====================
+# 加密核心
 def _derive_key(password, salt, iterations=600000, dklen=32):
     """PBKDF2-HMAC-SHA256 密钥派生"""
     return hashlib.pbkdf2_hmac(
@@ -245,12 +335,12 @@ def decrypt_text(encrypted, password):
     except Exception as e:
         raise ValueError(f'解密失败: {str(e)}')
 
-# ==================== 文件处理（分块加密，优化版） ====================
+# 文件处理（分块加密，带进度条）
 def encrypt_file(input_path, output_path, password):
     """
     加密文件（分块处理，支持大文件）
     格式：[MAGIC(4)][VERSION(1)][salt(16)][iv(16)][mac(32)][encrypted_chunks...]
-    使用增量HMAC，内存友好
+    使用增量HMAC，内存友好，带进度条
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f'文件不存在: {input_path}')
@@ -269,6 +359,9 @@ def encrypt_file(input_path, output_path, password):
     
     chunk_size = 64 * 1024  # 64KB
     
+    # 创建进度条
+    progress = ProgressBar(file_size, desc='加密中')
+    
     with open(input_path, 'rb') as f_in, open(output_path, 'wb') as f_out:
         # 写入文件头：魔数 + 版本号
         f_out.write(MAGIC_HEADER)
@@ -285,6 +378,7 @@ def encrypt_file(input_path, output_path, password):
         # 使用增量HMAC，不需要保存所有密文
         mac_ctx = hmac.new(mac_key, digestmod=hashlib.sha256)
         chunk_index = 0
+        processed = 0
         
         while True:
             chunk = f_in.read(chunk_size)
@@ -301,6 +395,10 @@ def encrypt_file(input_path, output_path, password):
             # 更新HMAC
             mac_ctx.update(encrypted_chunk)
             chunk_index += 1
+            
+            # 更新进度
+            processed += len(chunk)
+            progress.set_progress(processed)
         
         # 计算并写入MAC
         mac = mac_ctx.digest()
@@ -309,16 +407,15 @@ def encrypt_file(input_path, output_path, password):
         
         # 确保文件指针在末尾
         f_out.seek(0, os.SEEK_END)
+    
+    # 确保进度条完成并换行
+    if not progress.finished:
+        progress.set_progress(file_size)
+    print()
 
-def decrypt_file(input_path, output_path, password, progress_callback=None):
+def decrypt_file(input_path, output_path, password):
     """
-    解密文件（流式写入，内存友好）
-
-    Args:
-        input_path: 加密文件路径
-        output_path: 输出文件路径
-        password: 解密密钥
-        progress_callback: 可选进度回调函数 (current, total)
+    解密文件（流式写入，内存友好，带进度条）
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f'文件不存在: {input_path}')
@@ -363,7 +460,9 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
         # 计算数据区域大小（用于进度显示）
         data_start = f_in.tell()
         total_data_size = file_size - data_start
-        processed_size = 0
+        
+        # 创建进度条
+        progress = ProgressBar(total_data_size, desc='解密中')
 
         # 动态块大小限制
         remaining_size = total_data_size
@@ -371,6 +470,8 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
 
         # 流式解密并写入
         with open(output_path, 'wb') as f_out:
+            processed = 0
+            
             while True:
                 # 读取块长度
                 length_bytes = f_in.read(4)
@@ -403,9 +504,8 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
                 chunk_index += 1
 
                 # 更新进度
-                processed_size += 4 + chunk_len
-                if progress_callback:
-                    progress_callback(processed_size, total_data_size)
+                processed += 4 + chunk_len
+                progress.set_progress(processed)
 
         # 验证MAC
         expected_mac = mac_ctx.digest()
@@ -413,10 +513,15 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
             if os.path.exists(output_path):
                 os.remove(output_path)
             raise ValueError('认证失败：密钥错误或文件被篡改')
+    
+    # 确保进度条完成并换行
+    if not progress.finished:
+        progress.set_progress(total_data_size)
+    print()
 
-# ==================== NalKey 功能（简化混淆版） ====================
+# NalKey 功能（混淆）
 def _simple_obfuscate(data):
-    """简单混淆：异或 + 反转"""
+    """混淆：异或 + 反转"""
     salt = b'NalTool_TasKin_lZy@lOF04hqf?FM.waU^V[1ZW,e;TR5'
     result = bytearray()
     for i, byte in enumerate(data):
@@ -517,9 +622,9 @@ def get_password_with_nalkey(prompt='请输入密钥: ', allow_nalkey=True):
     except Exception:
         return input(prompt)
 
-# ==================== 命令行界面 ====================
+# 命令行界面
 def print_banner():
-    print('NalTool - 加解密工具 - TasKin 制作 - 3.2')
+    print('NalTool - 加解密工具 - TasKin 制作 - 3.3')
     print('TasKin 邮箱：tnailkogns@hotmail.com')
 
 def main():
@@ -638,16 +743,16 @@ def main():
                 print('密钥不能为空')
                 continue
 
+            output = filepath + '.nalfile'
             try:
-                output = filepath + '.nalfile'
-                print(f'正在加密文件... (大小: {file_size} 字节)')
+                print(f'正在加密文件... (大小: {file_size:,} 字节)')
                 start_time = time.time()
                 encrypt_file(filepath, output, password)
                 elapsed = time.time() - start_time
 
                 print(f'加密成功: {output}')
-                print(f'原始大小: {os.path.getsize(filepath)} 字节')
-                print(f'加密后大小: {os.path.getsize(output)} 字节')
+                print(f'原始大小: {file_size:,} 字节')
+                print(f'加密后大小: {os.path.getsize(output):,} 字节')
                 print(f'耗时: {elapsed:.2f} 秒')
             except Exception as e:
                 print(f'加密失败: {e}')
@@ -681,22 +786,24 @@ def main():
                 print('密钥不能为空')
                 continue
 
+            output = filepath[:-8] if filepath.endswith('.nalfile') else filepath + '.dec'
+            # 如果输出文件已存在，添加后缀
+            if os.path.exists(output):
+                base, ext = os.path.splitext(output)
+                output = f"{base}_decrypted{ext}"
+            
             try:
-                output = filepath[:-8] if filepath.endswith('.nalfile') else filepath + '.dec'
-                # 如果输出文件已存在，添加后缀
-                if os.path.exists(output):
-                    base, ext = os.path.splitext(output)
-                    output = f"{base}_decrypted{ext}"
-                
-                print(f'正在解密文件... (大小: {os.path.getsize(filepath)} 字节)')
+                file_size = os.path.getsize(filepath)
+                print(f'正在解密文件... (大小: {file_size:,} 字节)')
                 start_time = time.time()
                 decrypt_file(filepath, output, password)
                 elapsed = time.time() - start_time
 
                 print(f'解密成功: {output}')
-                print(f'恢复大小: {os.path.getsize(output)} 字节')
+                print(f'恢复大小: {os.path.getsize(output):,} 字节')
                 print(f'耗时: {elapsed:.2f} 秒')
 
+                # 尝试识别文件类型（Unix/Linux/macOS）
                 try:
                     import subprocess
                     if sys.platform != 'win32':
