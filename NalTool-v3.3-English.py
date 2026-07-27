@@ -1,4 +1,4 @@
-# NalTool - TasKin Made - 3.2
+# NalTool - TasKin Made - 3.3
 
 import os
 import sys
@@ -11,18 +11,108 @@ import struct
 from pathlib import Path
 from datetime import datetime
 
-# ==================== Version Info ====================
-VERSION = "3.2"
+# Version Info
+VERSION = "3.3"
 AUTHOR = "TasKin"
 EMAIL = "tnailkogns@hotmail.com"
 MAGIC_HEADER = b'NALT'  # File header magic number for identification
 HEADER_VERSION = 1      # File format version
 
-# ==================== Platform Detection ====================
+# Platform Detection
 IS_WINDOWS = sys.platform == 'win32'
 IS_UNIX = sys.platform in ('linux', 'darwin', 'cygwin', 'freebsd')
 
-# ==================== Cross-platform Password Input ====================
+# Progress Bar Module
+class ProgressBar:
+    """Terminal progress bar with customizable width and style"""
+    
+    def __init__(self, total, desc='Progress', width=40):
+        self.total = total
+        self.desc = desc
+        self.width = width
+        self.current = 0
+        self.start_time = time.time()
+        self.last_update = 0
+        self.min_update_interval = 0.1
+        self.finished = False
+        
+    def update(self, n=1):
+        if self.finished:
+            return
+        self.current = min(self.current + n, self.total)
+        self._render()
+        
+    def set_progress(self, value):
+        if self.finished:
+            return
+        self.current = min(value, self.total)
+        self._render()
+        
+    def finish(self):
+        self.finished = True
+        self.current = self.total
+        self._render()
+        
+    def _render(self):
+        now = time.time()
+        if now - self.last_update < self.min_update_interval and self.current < self.total:
+            return
+        self.last_update = now
+        
+        percent = self.current / self.total if self.total > 0 else 0
+        filled_len = int(self.width * percent)
+        bar = '█' * filled_len + '░' * (self.width - filled_len)
+        
+        elapsed = now - self.start_time
+        if self.current > 0 and self.current < self.total:
+            speed = self.current / elapsed if elapsed > 0 else 0
+            eta = (self.total - self.current) / speed if speed > 0 else 0
+        else:
+            speed = 0
+            eta = 0
+        
+        percent_str = f'{percent*100:>6.1f}%'
+        time_str = f'[{self._format_time(elapsed)}<{self._format_time(eta)}]' if self.current < self.total else f'[{self._format_time(elapsed)}]'
+        speed_str = f' {self._format_size(speed)}/s' if speed > 0 else ''
+        
+        line = f'\r{self.desc}: {bar} {percent_str} {time_str}{speed_str}'
+        
+        if self.current >= self.total:
+            self.finished = True
+            # Do not auto-add newline, controlled by caller
+        
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        
+    def _format_time(self, seconds):
+        if seconds < 0 or not self._isfinite(seconds):
+            return '--:--'
+        if seconds < 60:
+            return f'{int(seconds):02d}s'
+        elif seconds < 3600:
+            return f'{int(seconds//60):02d}m{int(seconds%60):02d}s'
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f'{hours:02d}h{minutes:02d}m'
+            
+    def _format_size(self, size):
+        if size < 1024:
+            return f'{size:.1f}B'
+        elif size < 1024 * 1024:
+            return f'{size/1024:.1f}KB'
+        elif size < 1024 * 1024 * 1024:
+            return f'{size/(1024*1024):.1f}MB'
+        else:
+            return f'{size/(1024*1024*1024):.1f}GB'
+            
+    def _isfinite(self, x):
+        try:
+            return x == x and x != float('inf') and x != float('-inf')
+        except:
+            return False
+
+# Cross-platform Password Input
 def get_password_with_asterisk(prompt='Enter key: '):
     """Password input showing * characters, cross-platform support"""
     if IS_WINDOWS:
@@ -88,12 +178,12 @@ def get_password_with_asterisk(prompt='Enter key: '):
         except Exception:
             return getpass.getpass(prompt)
 
-# ==================== Get Script Directory ====================
+# Get Script Directory
 def get_script_directory():
     """Get the directory where the NalTool script is located"""
     return os.path.dirname(os.path.abspath(__file__))
 
-# ==================== Base91 Codec ====================
+# Base91 Codec
 B91_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"'
 
 def b91encode(data):
@@ -148,7 +238,7 @@ def b91decode(s):
         out.append(b & 255)
     return bytes(out)
 
-# ==================== Core Encryption ====================
+# Core Encryption
 def _derive_key(password, salt, iterations=600000, dklen=32):
     """PBKDF2-HMAC-SHA256 key derivation"""
     return hashlib.pbkdf2_hmac(
@@ -245,12 +335,12 @@ def decrypt_text(encrypted, password):
     except Exception as e:
         raise ValueError(f'Decryption failed: {str(e)}')
 
-# ==================== File Processing (Chunked Encryption, Optimized) ====================
+# File Processing (Chunked Encryption with Progress Bar)
 def encrypt_file(input_path, output_path, password):
     """
     Encrypt file (chunked processing, supports large files)
     Format: [MAGIC(4)][VERSION(1)][salt(16)][iv(16)][mac(32)][encrypted_chunks...]
-    Uses incremental HMAC, memory-friendly
+    Uses incremental HMAC, memory-friendly, with progress bar
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f'File not found: {input_path}')
@@ -269,6 +359,9 @@ def encrypt_file(input_path, output_path, password):
     
     chunk_size = 64 * 1024  # 64KB
     
+    # Create progress bar
+    progress = ProgressBar(file_size, desc='Encrypting')
+    
     with open(input_path, 'rb') as f_in, open(output_path, 'wb') as f_out:
         # Write file header: magic number + version
         f_out.write(MAGIC_HEADER)
@@ -285,6 +378,7 @@ def encrypt_file(input_path, output_path, password):
         # Use incremental HMAC, no need to store all ciphertext
         mac_ctx = hmac.new(mac_key, digestmod=hashlib.sha256)
         chunk_index = 0
+        processed = 0
         
         while True:
             chunk = f_in.read(chunk_size)
@@ -301,6 +395,10 @@ def encrypt_file(input_path, output_path, password):
             # Update HMAC
             mac_ctx.update(encrypted_chunk)
             chunk_index += 1
+            
+            # Update progress
+            processed += len(chunk)
+            progress.set_progress(processed)
         
         # Calculate and write MAC
         mac = mac_ctx.digest()
@@ -309,16 +407,15 @@ def encrypt_file(input_path, output_path, password):
         
         # Ensure file pointer at end
         f_out.seek(0, os.SEEK_END)
+    
+    # Ensure progress bar completes and add newline
+    if not progress.finished:
+        progress.set_progress(file_size)
+    print()
 
-def decrypt_file(input_path, output_path, password, progress_callback=None):
+def decrypt_file(input_path, output_path, password):
     """
-    Decrypt file (streaming write, memory-friendly)
-
-    Args:
-        input_path: Path to encrypted file
-        output_path: Output file path
-        password: Decryption key
-        progress_callback: Optional progress callback function (current, total)
+    Decrypt file (streaming write, memory-friendly, with progress bar)
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f'File not found: {input_path}')
@@ -363,7 +460,9 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
         # Calculate data region size for progress display
         data_start = f_in.tell()
         total_data_size = file_size - data_start
-        processed_size = 0
+        
+        # Create progress bar
+        progress = ProgressBar(total_data_size, desc='Decrypting')
 
         # Dynamic chunk size limit
         remaining_size = total_data_size
@@ -371,6 +470,8 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
 
         # Stream decrypt and write
         with open(output_path, 'wb') as f_out:
+            processed = 0
+            
             while True:
                 # Read chunk length
                 length_bytes = f_in.read(4)
@@ -403,9 +504,8 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
                 chunk_index += 1
 
                 # Update progress
-                processed_size += 4 + chunk_len
-                if progress_callback:
-                    progress_callback(processed_size, total_data_size)
+                processed += 4 + chunk_len
+                progress.set_progress(processed)
 
         # Verify MAC
         expected_mac = mac_ctx.digest()
@@ -413,10 +513,15 @@ def decrypt_file(input_path, output_path, password, progress_callback=None):
             if os.path.exists(output_path):
                 os.remove(output_path)
             raise ValueError('Authentication failed: wrong key or file tampered')
+    
+    # Ensure progress bar completes and add newline
+    if not progress.finished:
+        progress.set_progress(total_data_size)
+    print()
 
-# ==================== NalKey Feature (Simplified Obfuscation) ====================
+# NalKey Feature (Obfuscation)
 def _simple_obfuscate(data):
-    """Simple obfuscation: XOR + reverse"""
+    """Obfuscation: XOR + reverse"""
     salt = b'NalTool_TasKin_lZy@lOF04hqf?FM.waU^V[1ZW,e;TR5'
     result = bytearray()
     for i, byte in enumerate(data):
@@ -517,9 +622,9 @@ def get_password_with_nalkey(prompt='Enter key: ', allow_nalkey=True):
     except Exception:
         return input(prompt)
 
-# ==================== Command Line Interface ====================
+# Command Line Interface
 def print_banner():
-    print('NalTool - Encryption Tool - Made by TasKin - 3.2')
+    print('NalTool - Encryption Tool - Made by TasKin - 3.3')
     print('TasKin Email: tnailkogns@hotmail.com')
 
 def main():
@@ -638,16 +743,16 @@ def main():
                 print('Key cannot be empty')
                 continue
 
+            output = filepath + '.nalfile'
             try:
-                output = filepath + '.nalfile'
-                print(f'Encrypting file... (size: {file_size} bytes)')
+                print(f'Encrypting file... (size: {file_size:,} bytes)')
                 start_time = time.time()
                 encrypt_file(filepath, output, password)
                 elapsed = time.time() - start_time
 
                 print(f'Encryption successful: {output}')
-                print(f'Original size: {os.path.getsize(filepath)} bytes')
-                print(f'Encrypted size: {os.path.getsize(output)} bytes')
+                print(f'Original size: {file_size:,} bytes')
+                print(f'Encrypted size: {os.path.getsize(output):,} bytes')
                 print(f'Time taken: {elapsed:.2f} seconds')
             except Exception as e:
                 print(f'Encryption failed: {e}')
@@ -681,22 +786,24 @@ def main():
                 print('Key cannot be empty')
                 continue
 
+            output = filepath[:-8] if filepath.endswith('.nalfile') else filepath + '.dec'
+            # If output file already exists, add suffix
+            if os.path.exists(output):
+                base, ext = os.path.splitext(output)
+                output = f"{base}_decrypted{ext}"
+            
             try:
-                output = filepath[:-8] if filepath.endswith('.nalfile') else filepath + '.dec'
-                # If output file already exists, add suffix
-                if os.path.exists(output):
-                    base, ext = os.path.splitext(output)
-                    output = f"{base}_decrypted{ext}"
-                
-                print(f'Decrypting file... (size: {os.path.getsize(filepath)} bytes)')
+                file_size = os.path.getsize(filepath)
+                print(f'Decrypting file... (size: {file_size:,} bytes)')
                 start_time = time.time()
                 decrypt_file(filepath, output, password)
                 elapsed = time.time() - start_time
 
                 print(f'Decryption successful: {output}')
-                print(f'Restored size: {os.path.getsize(output)} bytes')
+                print(f'Restored size: {os.path.getsize(output):,} bytes')
                 print(f'Time taken: {elapsed:.2f} seconds')
 
+                # Try to identify file type (Unix/Linux/macOS)
                 try:
                     import subprocess
                     if sys.platform != 'win32':
